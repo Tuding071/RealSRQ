@@ -27,15 +27,25 @@ jobs:
           unzip -q source.zip
           mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
 
-      - name: Download NCNN and Assets
+      - name: Download NCNN and Assets (fixed: flatten double-nested assets/ folder)
         run: |
           wget -q "$ASSETS_URL" -O assets.zip
           wget -q "$NCNN_URL" -O "$NCNN_NAME"
           ls -la assets.zip
           file assets.zip
-          unzip -o assets.zip -d "src/${GUI_MODULE}/app/src/main/assets"
+
+          mkdir -p assets_tmp
+          unzip -o assets.zip -d assets_tmp
+          mkdir -p "src/${GUI_MODULE}/app/src/main/assets"
+          cp -rv assets_tmp/assets/* "src/${GUI_MODULE}/app/src/main/assets/"
+
           mkdir -p src/3rdparty
           unzip -o "$NCNN_NAME" -d src/3rdparty/ncnn-android-vulkan-shared
+
+      - name: Verify assets landed correctly
+        run: |
+          echo "=== assets/realsr contents (should NOT have a nested assets/ folder) ==="
+          ls -la "src/${GUI_MODULE}/app/src/main/assets/realsr" | head -30
 
       - name: Overwrite MainActivity.java with modded version
         run: |
