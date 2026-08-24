@@ -50,9 +50,7 @@ jobs:
           echo '     private String[] formats;' >> "$P"
           echo ' ' >> "$P"
           echo '     private String[] command = null;' >> "$P"
-          echo '@@ -560,10 +564,15 @@ public class MainActivity extends AppCompatActivity {' >> "$P"
-          echo '             } else if (requestCode == SELECT_MULTI_IMAGE) {' >> "$P"
-          echo '                 List<Uri> imageUris = new ArrayList<>();' >> "$P"
+          echo '@@ -560,8 +564,13 @@' >> "$P"
           echo '                 ClipData clipData = data.getClipData();' >> "$P"
           echo '-                for (int i = 0; i < clipData.getItemCount(); i++) {' >> "$P"
           echo '-                    imageUris.add(clipData.getItemAt(i).getUri());' >> "$P"
@@ -67,8 +65,7 @@ jobs:
           echo '+                autoQueueIndex = 0;' >> "$P"
           echo '+                processNextInAutoQueue();' >> "$P"
           echo '             }' >> "$P"
-          echo ' ' >> "$P"
-          echo '         }' >> "$P"
+          echo '@@ -600,6 +609,42 @@' >> "$P"
           echo '         super.onActivityResult(requestCode, resultCode, data);' >> "$P"
           echo '     }' >> "$P"
           echo ' ' >> "$P"
@@ -106,28 +103,27 @@ jobs:
           echo '+            runBtn.performClick();' >> "$P"
           echo '+    }' >> "$P"
           echo '+' >> "$P"
-          echo '@@ -820,6 +860,13 @@ public class MainActivity extends AppCompatActivity {' >> "$P"
-          echo '                             if (!effectivelyFinalCmd.contains("output.png"))' >> "$P"
-          echo '                                 imageView.setVisibility(View.GONE);' >> "$P"
-          echo '                         }' >> "$P"
+          echo '@@ -820,6 +865,13 @@' >> "$P"
+          echo '                         if (!effectivelyFinalCmd.contains("output.png"))' >> "$P"
+          echo '                             imageView.setVisibility(View.GONE);' >> "$P"
+          echo '                     }' >> "$P"
           echo '+' >> "$P"
-          echo '+                        if (success && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {' >> "$P"
-          echo '+                            autoQueueIndex++;' >> "$P"
-          echo '+                            if (autoQueueIndex < autoQueue.size()) {' >> "$P"
-          echo '+                                processNextInAutoQueue();' >> "$P"
-          echo '+                            } else {' >> "$P"
-          echo '+                                autoQueue.clear();' >> "$P"
-          echo '+                            }' >> "$P"
+          echo '+                    if (success && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {' >> "$P"
+          echo '+                        autoQueueIndex++;' >> "$P"
+          echo '+                        if (autoQueueIndex < autoQueue.size()) {' >> "$P"
+          echo '+                            processNextInAutoQueue();' >> "$P"
+          echo '+                        } else {' >> "$P"
+          echo '+                            autoQueue.clear();' >> "$P"
           echo '+                        }' >> "$P"
-          echo '                             });' >> "$P"
-          echo '                         }' >> "$P"
+          echo '+                    }' >> "$P"
+          echo '                 });' >> "$P"
+          echo '             }' >> "$P"
           cat "$P"
 
       - name: Apply queue patch
         run: |
           cd src
-          git init -q
-          git apply --verbose --recount ../queue.patch
+          patch -p1 --fuzz=5 --ignore-whitespace --verbose < ../queue.patch
 
       - name: Set up JDK
         uses: actions/setup-java@v4
