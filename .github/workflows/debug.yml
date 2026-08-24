@@ -18,68 +18,38 @@ jobs:
           unzip -q source.zip
           mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
 
-      - name: Download and unzip assets.zip
+      - name: Print official workflow files (ground truth)
         run: |
-          ASSET_URL="https://github.com/${UPSTREAM_REPO}/releases/download/${UPSTREAM_TAG}/assets.zip"
-          FALLBACK_URL="https://github.com/${UPSTREAM_REPO}/releases/download/1.11.1/assets.zip"
-          echo "Trying ${ASSET_URL}"
-          curl -L -f -o assets.zip "$ASSET_URL" || {
-            echo "1.11.2 assets.zip not found, falling back to 1.11.1"
-            curl -L -f -o assets.zip "$FALLBACK_URL"
-          }
-          file assets.zip
-          unzip -q assets.zip -d assets_extracted
-
-      - name: Deep inspect repo structure
-        run: |
-          echo "=== Full src/ tree (depth 3) ==="
-          find src -maxdepth 3 -type d
-
+          echo "=== android.yml ==="
+          cat src/.github/workflows/android.yml
           echo ""
-          echo "=== All build.gradle / build.gradle.kts files ==="
-          find src -iname "build.gradle*"
-
+          echo "=== libs.yml ==="
+          cat src/.github/workflows/libs.yml
           echo ""
-          echo "=== All settings.gradle files ==="
-          find src -iname "settings.gradle*"
-
+          echo "=== copy_cli_build_result.bat ==="
+          cat "src/3rdparty/copy_cli_build_result.bat"
           echo ""
-          echo "=== CLI module build.gradle content ==="
-          find src -path "*CLI*" -iname "build.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
-
+          echo "=== GUI app-level build.gradle ==="
+          cat "src/${GUI_MODULE}/app/build.gradle"
           echo ""
-          echo "=== GUI app-level build.gradle content ==="
-          find src -path "*${GUI_MODULE}*" -iname "build.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
-
+          echo "=== GUI top-level build.gradle ==="
+          cat "src/${GUI_MODULE}/build.gradle"
           echo ""
-          echo "=== GUI settings.gradle content ==="
-          find src -path "*${GUI_MODULE}*" -iname "settings.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
-
-          echo ""
-          echo "=== Root settings.gradle content (if any) ==="
-          cat src/settings.gradle 2>/dev/null || cat src/settings.gradle.kts 2>/dev/null || echo "not found at root"
-
-          echo ""
-          echo "=== assets_extracted contents (depth 2) ==="
-          find assets_extracted -maxdepth 2
-
-          echo ""
-          echo "=== Existing assets folders anywhere in src (depth 4) ==="
-          find src -maxdepth 4 -type d -iname "assets"
-
-          echo ""
-          echo "=== Any AndroidManifest.xml locations ==="
-          find src -iname "AndroidManifest.xml"
+          echo "=== GUI settings.gradle ==="
+          cat "src/${GUI_MODULE}/settings.gradle"
 
       - name: Upload debug info as artifact
         run: |
-          {
-            echo "=== Full src/ tree (depth 4) ==="
-            find src -maxdepth 4
-          } > debug_tree.txt
+          mkdir -p debugout
+          cp src/.github/workflows/android.yml debugout/ 2>/dev/null || true
+          cp src/.github/workflows/libs.yml debugout/ 2>/dev/null || true
+          cp "src/3rdparty/copy_cli_build_result.bat" debugout/ 2>/dev/null || true
+          cp "src/${GUI_MODULE}/app/build.gradle" debugout/gui_app_build.gradle 2>/dev/null || true
+          cp "src/${GUI_MODULE}/build.gradle" debugout/gui_build.gradle 2>/dev/null || true
+          cp "src/${GUI_MODULE}/settings.gradle" debugout/gui_settings.gradle 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: debug-info
-          path: debug_tree.txt
+          path: debugout/
