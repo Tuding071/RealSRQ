@@ -1,0 +1,152 @@
+name: Build Modded RealSR-NCNN-Android (Auto Queue)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  UPSTREAM_TAG: "1.11.2"
+  UPSTREAM_REPO: "tumuyan/RealSR-NCNN-Android"
+  GUI_MODULE: "RealSR-NCNN-Android-GUI"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout upstream source at tag
+        run: |
+          curl -L -o source.zip "https://github.com/${UPSTREAM_REPO}/archive/refs/tags/${UPSTREAM_TAG}.zip"
+          unzip -q source.zip
+          mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
+
+      - name: Download and unzip assets.zip
+        run: |
+          curl -L -o assets.zip "https://github.com/${UPSTREAM_REPO}/releases/download/${UPSTREAM_TAG}/assets.zip"
+          unzip -q assets.zip -d assets_extracted
+          cp -rv assets_extracted/* src/RealSR-NCNN-Android-CLI/ || true
+
+      - name: Write queue patch (Python, avoids YAML/heredoc issues)
+        run: |
+          python3 << 'PYEOF'
+          patch = '''--- a/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java
+          +++ b/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java
+          @@ -95,6 +95,10 @@ public class MainActivity extends AppCompatActivity {
+               private String outputSavePath = "";
+               private String inputFileName = "";
+           
+          +    // --- Auto Queue feature ---
+          +    private final List<Uri> autoQueue = new ArrayList<>();
+          +    private int autoQueueIndex = 0;
+          +
+               private String[] formats;
+           
+               private String[] command = null;
+          @@ -560,10 +564,15 @@ public class MainActivity extends AppCompatActivity {
+                       } else if (requestCode == SELECT_MULTI_IMAGE) {
+                           List<Uri> imageUris = new ArrayList<>();
+                           ClipData clipData = data.getClipData();
+          -                for (int i = 0; i < clipData.getItemCount(); i++) {
+          -                    imageUris.add(clipData.getItemAt(i).getUri());
+          +                if (clipData != null) {
+          +                    for (int i = 0; i < clipData.getItemCount(); i++) {
+          +                        imageUris.add(clipData.getItemAt(i).getUri());
+          +                    }
+                           }
+          -                handleSelectedImages(imageUris);
+          +                autoQueue.clear();
+          +                autoQueue.addAll(imageUris);
+          +                autoQueueIndex = 0;
+          +                processNextInAutoQueue();
+                       }
+           
+                   }
+                   super.onActivityResult(requestCode, resultCode, data);
+               }
+           
+          +    // Loads the next queued image via the normal single-image path,
+          +    // then auto-triggers the same run logic as tapping "Run".
+          +    private void processNextInAutoQueue() {
+          +        if (autoQueueIndex >= autoQueue.size()) {
+          +            autoQueue.clear();
+          +            return;
+          +        }
+          +        Uri uri = autoQueue.get(autoQueueIndex);
+          +        deleteFile(inputFile);
+          +        inputFileName = getFileName(uri, this);
+          +        if (inputFileName != null)
+          +            inputFileName = inputFileName.replaceFirst("\\\\.[^.]+$", "");
+          +        try {
+          +            InputStream in = getContentResolver().openInputStream(uri);
+          +            if (in != null) {
+          +                saveInputImage(in, "");
+          +                runOnUiThread(this::triggerRunClick);
+          +            } else {
+          +                autoQueueIndex++;
+          +                processNextInAutoQueue();
+          +            }
+          +        } catch (Exception e) {
+          +            e.printStackTrace();
+          +            autoQueueIndex++;
+          +            processNextInAutoQueue();
+          +        }
+          +    }
+          +
+          +    private void triggerRunClick() {
+          +        View runBtn = findViewById(R.id.btn_run);
+          +        if (runBtn != null)
+          +            runBtn.performClick();
+          +    }
+          +
+          @@ -820,6 +860,13 @@ public class MainActivity extends AppCompatActivity {
+                                       if (!effectivelyFinalCmd.contains("output.png"))
+                                           imageView.setVisibility(View.GONE);
+                                   }
+          +
+          +                        if (success && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {
+          +                            autoQueueIndex++;
+          +                            if (autoQueueIndex < autoQueue.size()) {
+          +                                processNextInAutoQueue();
+          +                            } else {
+          +                                autoQueue.clear();
+          +                            }
+          +                        }
+                                   });
+                               }
+          '''
+          import re
+          # strip the common leading indentation added for YAML embedding
+          lines = patch.split(chr(10))
+          cleaned = chr(10).join(l[10:] if len(l) >= 10 else l for l in lines)
+          with open('queue.patch', 'w') as f:
+              f.write(cleaned)
+          PYEOF
+          cat queue.patch | head -5
+
+      - name: Apply queue patch
+        run: |
+          cd src
+          git init -q
+          git apply --verbose --recount ../queue.patch
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make gradlew executable
+        run: chmod +x src/gradlew
+
+      - name: Build APK
+        working-directory: src
+        run: ./gradlew :${GUI_MODULE}:app:assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RealSR-NCNN-Android-AutoQueue-${{ env.UPSTREAM_TAG }}
+          path: src/${{ env.GUI_MODULE }}/app/build/outputs/apk/release/*.apk
