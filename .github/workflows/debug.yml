@@ -1,0 +1,85 @@
+name: Debug RealSR-NCNN-Android Build
+
+on:
+  workflow_dispatch:
+
+env:
+  UPSTREAM_TAG: "1.11.2"
+  UPSTREAM_REPO: "tumuyan/RealSR-NCNN-Android"
+  GUI_MODULE: "RealSR-NCNN-Android-GUI"
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout upstream source at tag
+        run: |
+          curl -L -f -o source.zip "https://github.com/${UPSTREAM_REPO}/archive/refs/tags/${UPSTREAM_TAG}.zip"
+          unzip -q source.zip
+          mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
+
+      - name: Download and unzip assets.zip
+        run: |
+          ASSET_URL="https://github.com/${UPSTREAM_REPO}/releases/download/${UPSTREAM_TAG}/assets.zip"
+          FALLBACK_URL="https://github.com/${UPSTREAM_REPO}/releases/download/1.11.1/assets.zip"
+          echo "Trying ${ASSET_URL}"
+          curl -L -f -o assets.zip "$ASSET_URL" || {
+            echo "1.11.2 assets.zip not found, falling back to 1.11.1"
+            curl -L -f -o assets.zip "$FALLBACK_URL"
+          }
+          file assets.zip
+          unzip -q assets.zip -d assets_extracted
+
+      - name: Deep inspect repo structure
+        run: |
+          echo "=== Full src/ tree (depth 3) ==="
+          find src -maxdepth 3 -type d
+
+          echo ""
+          echo "=== All build.gradle / build.gradle.kts files ==="
+          find src -iname "build.gradle*"
+
+          echo ""
+          echo "=== All settings.gradle files ==="
+          find src -iname "settings.gradle*"
+
+          echo ""
+          echo "=== CLI module build.gradle content ==="
+          find src -path "*CLI*" -iname "build.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
+
+          echo ""
+          echo "=== GUI app-level build.gradle content ==="
+          find src -path "*${GUI_MODULE}*" -iname "build.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
+
+          echo ""
+          echo "=== GUI settings.gradle content ==="
+          find src -path "*${GUI_MODULE}*" -iname "settings.gradle*" -exec echo "--- {} ---" \; -exec cat {} \;
+
+          echo ""
+          echo "=== Root settings.gradle content (if any) ==="
+          cat src/settings.gradle 2>/dev/null || cat src/settings.gradle.kts 2>/dev/null || echo "not found at root"
+
+          echo ""
+          echo "=== assets_extracted contents (depth 2) ==="
+          find assets_extracted -maxdepth 2
+
+          echo ""
+          echo "=== Existing assets folders anywhere in src (depth 4) ==="
+          find src -maxdepth 4 -type d -iname "assets"
+
+          echo ""
+          echo "=== Any AndroidManifest.xml locations ==="
+          find src -iname "AndroidManifest.xml"
+
+      - name: Upload debug info as artifact
+        run: |
+          {
+            echo "=== Full src/ tree (depth 4) ==="
+            find src -maxdepth 4
+          } > debug_tree.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-info
+          path: debug_tree.txt
