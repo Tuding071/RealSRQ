@@ -103,7 +103,7 @@ jobs:
           echo '+            runBtn.performClick();' >> "$P"
           echo '+    }' >> "$P"
           echo '+' >> "$P"
-          echo '@@ -820,3 +865,10 @@' >> "$P"
+          echo '@@ -820,3 +865,12 @@' >> "$P"
           echo '                         if (!effectivelyFinalCmd.contains("output.png"))' >> "$P"
           echo '                             imageView.setVisibility(View.GONE);' >> "$P"
           echo '                     }' >> "$P"
