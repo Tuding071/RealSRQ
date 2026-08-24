@@ -10,6 +10,9 @@ env:
   UPSTREAM_REPO: "tumuyan/RealSR-NCNN-Android"
   GUI_MODULE: "RealSR-NCNN-Android-GUI"
   TARGET_FILE: "RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java"
+  ASSETS_URL: "https://github.com/tumuyan/RealSR-NCNN-Android/releases/download/1.7.13-1/assets.zip"
+  NCNN_URL: "https://github.com/Tencent/ncnn/releases/download/20221128/ncnn-20221128-android-vulkan-shared.zip"
+  NCNN_NAME: "ncnn-20221128-android-vulkan-shared.zip"
 
 jobs:
   build:
@@ -24,29 +27,17 @@ jobs:
           unzip -q source.zip
           mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
 
-      - name: Download and unzip assets.zip
+      - name: Download NCNN and Assets (matches official CI)
         run: |
-          ASSET_URL="https://github.com/${UPSTREAM_REPO}/releases/download/${UPSTREAM_TAG}/assets.zip"
-          FALLBACK_URL="https://github.com/${UPSTREAM_REPO}/releases/download/1.11.1/assets.zip"
-          echo "Trying ${ASSET_URL}"
-          curl -L -f -o assets.zip "$ASSET_URL" || {
-            echo "1.11.2 assets.zip not found, falling back to 1.11.1"
-            curl -L -f -o assets.zip "$FALLBACK_URL"
-          }
-          file assets.zip
-          unzip -q assets.zip -d assets_extracted
-          cp -rv assets_extracted/* src/RealSR-NCNN-Android-CLI/ || true
+          wget -q "$ASSETS_URL" -O assets.zip
+          wget -q "$NCNN_URL" -O "$NCNN_NAME"
+          mkdir -p src/3rdparty
+          unzip -o assets.zip -d "src/${GUI_MODULE}/app/src/main/assets"
+          unzip -o "$NCNN_NAME" -d "src/3rdparty/ncnn-android-vulkan-shared"
 
       - name: Overwrite MainActivity.java with modded version
         run: |
           cp -v patches/MainActivity.java "src/${TARGET_FILE}"
-
-      - name: Inspect GUI module structure (debug)
-        run: |
-          echo "--- src/ top level ---"
-          ls -la src/
-          echo "--- inside GUI module ---"
-          ls -la "src/${GUI_MODULE}" || true
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -57,15 +48,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Make gradlew executable
-        run: chmod +x "src/${GUI_MODULE}/gradlew"
-
-      - name: Build APK
-        working-directory: src/${{ env.GUI_MODULE }}
-        run: ./gradlew :app:assembleRelease
+      - name: Build Gui
+        run: |
+          cd "src/${GUI_MODULE}" && chmod +x gradlew && ./gradlew assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: RealSR-NCNN-Android-AutoQueue-${{ env.UPSTREAM_TAG }}
-          path: src/${{ env.GUI_MODULE }}/app/build/outputs/apk/release/*.apk
+          path: src/${{ env.GUI_MODULE }}/app/build/outputs/apk/**/*.apk
