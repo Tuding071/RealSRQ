@@ -1,4 +1,4 @@
-name: Build Modded RealSR-NCNN-Android (Full CLI + Auto Queue)
+name: Build Modded RealSR-NCNN-Android (Auto Queue)
 
 on:
   workflow_dispatch:
@@ -9,8 +9,8 @@ env:
   UPSTREAM_TAG: "1.11.2"
   UPSTREAM_REPO: "tumuyan/RealSR-NCNN-Android"
   GUI_MODULE: "RealSR-NCNN-Android-GUI"
-  CLI_MODULE: "RealSR-NCNN-Android-CLI"
   TARGET_FILE: "RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java"
+  ASSETS_URL: "https://github.com/tumuyan/RealSR-NCNN-Android/releases/download/1.11.1/assets.zip"
   NCNN_URL: "https://github.com/Tencent/ncnn/releases/download/20221128/ncnn-20221128-android-vulkan-shared.zip"
   NCNN_NAME: "ncnn-20221128-android-vulkan-shared.zip"
 
@@ -27,11 +27,19 @@ jobs:
           unzip -q source.zip
           mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
 
-      - name: Download NCNN shared libs
+      - name: Download NCNN and Assets
         run: |
+          wget -q "$ASSETS_URL" -O assets.zip
           wget -q "$NCNN_URL" -O "$NCNN_NAME"
-          mkdir -p src/3rdparty/ncnn-android-vulkan-shared
+          ls -la assets.zip
+          file assets.zip
+          unzip -o assets.zip -d "src/${GUI_MODULE}/app/src/main/assets"
+          mkdir -p src/3rdparty
           unzip -o "$NCNN_NAME" -d src/3rdparty/ncnn-android-vulkan-shared
+
+      - name: Overwrite MainActivity.java with modded version
+        run: |
+          cp -v patches/MainActivity.java "src/${TARGET_FILE}"
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -41,47 +49,6 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install NDK and CMake
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1" > /dev/null
-
-      - name: Build all CLI submodules
-        working-directory: src/${{ env.CLI_MODULE }}
-        run: |
-          chmod +x gradlew
-          for module in Anime4k MNN-SR RealSR RealCUGAN SRMD Waifu2x Resize; do
-            echo "=== Building $module ==="
-            ./gradlew ":${module}:assembleRelease" || echo "!!! $module build failed, continuing !!!"
-          done
-
-      - name: List CLI build outputs (debug)
-        run: |
-          find src/${{ env.CLI_MODULE }} -path "*merged_native_libs*" -o -path "*mergeReleaseNativeLibs*" | head -50
-
-      - name: Copy CLI build outputs into GUI assets (mirrors copy_cli_build_result.bat)
-        run: |
-          TARGET_DIR="src/${GUI_MODULE}/app/src/main/assets/realsr"
-          mkdir -p "$TARGET_DIR"
-          for module in Anime4k MNN-SR RealSR RealCUGAN SRMD Waifu2x Resize; do
-            SRC_LIB_DIR="src/${CLI_MODULE}/${module}/build/intermediates/merged_native_libs/release/mergeReleaseNativeLibs/out/lib/arm64-v8a"
-            if [ -d "$SRC_LIB_DIR" ]; then
-              echo "Copying from $SRC_LIB_DIR"
-              cp -v "$SRC_LIB_DIR"/* "$TARGET_DIR"/ 2>/dev/null || true
-            else
-              echo "!!! Missing expected output dir for $module: $SRC_LIB_DIR"
-            fi
-          done
-          cp -v src/3rdparty/ncnn-android-vulkan-shared/arm64-v8a/lib/libncnn.so "$TARGET_DIR"/ 2>/dev/null || echo "!!! libncnn.so not found at expected path"
-
-          echo ""
-          echo "=== Final assets/realsr contents ==="
-          ls -la "$TARGET_DIR"
-
-      - name: Overwrite MainActivity.java with modded version
-        run: |
-          cp -v patches/MainActivity.java "src/${TARGET_FILE}"
 
       - name: Build Gui
         run: |
