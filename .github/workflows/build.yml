@@ -41,6 +41,13 @@ jobs:
         run: |
           cp -v patches/MainActivity.java "src/${TARGET_FILE}"
 
+      - name: Inspect GUI module structure (debug)
+        run: |
+          echo "--- src/ top level ---"
+          ls -la src/
+          echo "--- inside GUI module ---"
+          ls -la "src/${GUI_MODULE}" || true
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -51,11 +58,11 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Make gradlew executable
-        run: chmod +x src/gradlew
+        run: chmod +x "src/${GUI_MODULE}/gradlew"
 
       - name: Build APK
-        working-directory: src
-        run: ./gradlew :${GUI_MODULE}:app:assembleRelease
+        working-directory: src/${{ env.GUI_MODULE }}
+        run: ./gradlew :app:assembleRelease
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
