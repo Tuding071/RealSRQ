@@ -9,11 +9,15 @@ env:
   UPSTREAM_TAG: "1.11.2"
   UPSTREAM_REPO: "tumuyan/RealSR-NCNN-Android"
   GUI_MODULE: "RealSR-NCNN-Android-GUI"
+  TARGET_FILE: "RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java"
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout this repo (for the modded MainActivity.java)
+        uses: actions/checkout@v4
+
       - name: Checkout upstream source at tag
         run: |
           curl -L -f -o source.zip "https://github.com/${UPSTREAM_REPO}/archive/refs/tags/${UPSTREAM_TAG}.zip"
@@ -33,95 +37,9 @@ jobs:
           unzip -q assets.zip -d assets_extracted
           cp -rv assets_extracted/* src/RealSR-NCNN-Android-CLI/ || true
 
-      - name: Write queue patch
+      - name: Overwrite MainActivity.java with modded version
         run: |
-          P=queue.patch
-          : > "$P"
-          echo '--- a/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java' >> "$P"
-          echo '+++ b/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java' >> "$P"
-          echo '@@ -95,6 +95,10 @@ public class MainActivity extends AppCompatActivity {' >> "$P"
-          echo '     private String outputSavePath = "";' >> "$P"
-          echo '     private String inputFileName = "";' >> "$P"
-          echo ' ' >> "$P"
-          echo '+    // --- Auto Queue feature ---' >> "$P"
-          echo '+    private final List<Uri> autoQueue = new ArrayList<>();' >> "$P"
-          echo '+    private int autoQueueIndex = 0;' >> "$P"
-          echo '+' >> "$P"
-          echo '     private String[] formats;' >> "$P"
-          echo ' ' >> "$P"
-          echo '     private String[] command = null;' >> "$P"
-          echo '@@ -560,6 +564,11 @@' >> "$P"
-          echo '                 ClipData clipData = data.getClipData();' >> "$P"
-          echo '-                for (int i = 0; i < clipData.getItemCount(); i++) {' >> "$P"
-          echo '-                    imageUris.add(clipData.getItemAt(i).getUri());' >> "$P"
-          echo '+                if (clipData != null) {' >> "$P"
-          echo '+                    for (int i = 0; i < clipData.getItemCount(); i++) {' >> "$P"
-          echo '+                        imageUris.add(clipData.getItemAt(i).getUri());' >> "$P"
-          echo '+                    }' >> "$P"
-          echo '                 }' >> "$P"
-          echo '-                handleSelectedImages(imageUris);' >> "$P"
-          echo '+                autoQueue.clear();' >> "$P"
-          echo '+                autoQueue.addAll(imageUris);' >> "$P"
-          echo '+                autoQueueIndex = 0;' >> "$P"
-          echo '+                processNextInAutoQueue();' >> "$P"
-          echo '             }' >> "$P"
-          echo '@@ -600,4 +609,40 @@' >> "$P"
-          echo '         super.onActivityResult(requestCode, resultCode, data);' >> "$P"
-          echo '     }' >> "$P"
-          echo ' ' >> "$P"
-          echo '+    // Loads the next queued image via the normal single-image path,' >> "$P"
-          echo '+    // then auto-triggers the same run logic as tapping "Run".' >> "$P"
-          echo '+    private void processNextInAutoQueue() {' >> "$P"
-          echo '+        if (autoQueueIndex >= autoQueue.size()) {' >> "$P"
-          echo '+            autoQueue.clear();' >> "$P"
-          echo '+            return;' >> "$P"
-          echo '+        }' >> "$P"
-          echo '+        Uri uri = autoQueue.get(autoQueueIndex);' >> "$P"
-          echo '+        deleteFile(inputFile);' >> "$P"
-          echo '+        inputFileName = getFileName(uri, this);' >> "$P"
-          echo '+        if (inputFileName != null)' >> "$P"
-          printf '%s\n' '+            inputFileName = inputFileName.replaceFirst("\\.[^.]+$", "");' >> "$P"
-          echo '+        try {' >> "$P"
-          echo '+            InputStream in = getContentResolver().openInputStream(uri);' >> "$P"
-          echo '+            if (in != null) {' >> "$P"
-          echo '+                saveInputImage(in, "");' >> "$P"
-          echo '+                runOnUiThread(this::triggerRunClick);' >> "$P"
-          echo '+            } else {' >> "$P"
-          echo '+                autoQueueIndex++;' >> "$P"
-          echo '+                processNextInAutoQueue();' >> "$P"
-          echo '+            }' >> "$P"
-          echo '+        } catch (Exception e) {' >> "$P"
-          echo '+            e.printStackTrace();' >> "$P"
-          echo '+            autoQueueIndex++;' >> "$P"
-          echo '+            processNextInAutoQueue();' >> "$P"
-          echo '+        }' >> "$P"
-          echo '+    }' >> "$P"
-          echo '+' >> "$P"
-          echo '+    private void triggerRunClick() {' >> "$P"
-          echo '+        View runBtn = findViewById(R.id.btn_run);' >> "$P"
-          echo '+        if (runBtn != null)' >> "$P"
-          echo '+            runBtn.performClick();' >> "$P"
-          echo '+    }' >> "$P"
-          echo '+' >> "$P"
-          echo '@@ -820,3 +865,12 @@' >> "$P"
-          echo '                         if (!effectivelyFinalCmd.contains("output.png"))' >> "$P"
-          echo '                             imageView.setVisibility(View.GONE);' >> "$P"
-          echo '                     }' >> "$P"
-          echo '+' >> "$P"
-          echo '+                    if (success && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {' >> "$P"
-          echo '+                        autoQueueIndex++;' >> "$P"
-          echo '+                        if (autoQueueIndex < autoQueue.size()) {' >> "$P"
-          echo '+                            processNextInAutoQueue();' >> "$P"
-          echo '+                        } else {' >> "$P"
-          echo '+                            autoQueue.clear();' >> "$P"
-          echo '+                        }' >> "$P"
-          echo '+                    }' >> "$P"
-          cat "$P"
-
-      - name: Apply queue patch
-        run: |
-          cd src
-          patch -p1 --fuzz=5 --ignore-whitespace --verbose < ../queue.patch
+          cp -v patches/MainActivity.java "src/${TARGET_FILE}"
 
       - name: Set up JDK
         uses: actions/setup-java@v4
