@@ -27,7 +27,7 @@ jobs:
           unzip -q source.zip
           mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
 
-      - name: Download NCNN and Assets (fixed: flatten double-nested assets/ folder)
+      - name: "Download NCNN and Assets, flatten nested folder"
         run: |
           wget -q "$ASSETS_URL" -O assets.zip
           wget -q "$NCNN_URL" -O "$NCNN_NAME"
