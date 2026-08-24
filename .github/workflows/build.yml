@@ -16,112 +16,112 @@ jobs:
     steps:
       - name: Checkout upstream source at tag
         run: |
-          curl -L -o source.zip "https://github.com/${UPSTREAM_REPO}/archive/refs/tags/${UPSTREAM_TAG}.zip"
+          curl -L -f -o source.zip "https://github.com/${UPSTREAM_REPO}/archive/refs/tags/${UPSTREAM_TAG}.zip"
           unzip -q source.zip
           mv RealSR-NCNN-Android-${UPSTREAM_TAG} src
 
       - name: Download and unzip assets.zip
         run: |
-          curl -L -o assets.zip "https://github.com/${UPSTREAM_REPO}/releases/download/${UPSTREAM_TAG}/assets.zip"
+          ASSET_URL="https://github.com/${UPSTREAM_REPO}/releases/download/${UPSTREAM_TAG}/assets.zip"
+          FALLBACK_URL="https://github.com/${UPSTREAM_REPO}/releases/download/1.11.1/assets.zip"
+          echo "Trying ${ASSET_URL}"
+          curl -L -f -o assets.zip "$ASSET_URL" || {
+            echo "1.11.2 assets.zip not found, falling back to 1.11.1"
+            curl -L -f -o assets.zip "$FALLBACK_URL"
+          }
+          file assets.zip
           unzip -q assets.zip -d assets_extracted
           cp -rv assets_extracted/* src/RealSR-NCNN-Android-CLI/ || true
 
-      - name: Write queue patch (Python, avoids YAML/heredoc issues)
+      - name: Write queue patch
         run: |
-          python3 << 'PYEOF'
-          patch = '''--- a/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java
-          +++ b/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java
-          @@ -95,6 +95,10 @@ public class MainActivity extends AppCompatActivity {
-               private String outputSavePath = "";
-               private String inputFileName = "";
-           
-          +    // --- Auto Queue feature ---
-          +    private final List<Uri> autoQueue = new ArrayList<>();
-          +    private int autoQueueIndex = 0;
-          +
-               private String[] formats;
-           
-               private String[] command = null;
-          @@ -560,10 +564,15 @@ public class MainActivity extends AppCompatActivity {
-                       } else if (requestCode == SELECT_MULTI_IMAGE) {
-                           List<Uri> imageUris = new ArrayList<>();
-                           ClipData clipData = data.getClipData();
-          -                for (int i = 0; i < clipData.getItemCount(); i++) {
-          -                    imageUris.add(clipData.getItemAt(i).getUri());
-          +                if (clipData != null) {
-          +                    for (int i = 0; i < clipData.getItemCount(); i++) {
-          +                        imageUris.add(clipData.getItemAt(i).getUri());
-          +                    }
-                           }
-          -                handleSelectedImages(imageUris);
-          +                autoQueue.clear();
-          +                autoQueue.addAll(imageUris);
-          +                autoQueueIndex = 0;
-          +                processNextInAutoQueue();
-                       }
-           
-                   }
-                   super.onActivityResult(requestCode, resultCode, data);
-               }
-           
-          +    // Loads the next queued image via the normal single-image path,
-          +    // then auto-triggers the same run logic as tapping "Run".
-          +    private void processNextInAutoQueue() {
-          +        if (autoQueueIndex >= autoQueue.size()) {
-          +            autoQueue.clear();
-          +            return;
-          +        }
-          +        Uri uri = autoQueue.get(autoQueueIndex);
-          +        deleteFile(inputFile);
-          +        inputFileName = getFileName(uri, this);
-          +        if (inputFileName != null)
-          +            inputFileName = inputFileName.replaceFirst("\\\\.[^.]+$", "");
-          +        try {
-          +            InputStream in = getContentResolver().openInputStream(uri);
-          +            if (in != null) {
-          +                saveInputImage(in, "");
-          +                runOnUiThread(this::triggerRunClick);
-          +            } else {
-          +                autoQueueIndex++;
-          +                processNextInAutoQueue();
-          +            }
-          +        } catch (Exception e) {
-          +            e.printStackTrace();
-          +            autoQueueIndex++;
-          +            processNextInAutoQueue();
-          +        }
-          +    }
-          +
-          +    private void triggerRunClick() {
-          +        View runBtn = findViewById(R.id.btn_run);
-          +        if (runBtn != null)
-          +            runBtn.performClick();
-          +    }
-          +
-          @@ -820,6 +860,13 @@ public class MainActivity extends AppCompatActivity {
-                                       if (!effectivelyFinalCmd.contains("output.png"))
-                                           imageView.setVisibility(View.GONE);
-                                   }
-          +
-          +                        if (success && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {
-          +                            autoQueueIndex++;
-          +                            if (autoQueueIndex < autoQueue.size()) {
-          +                                processNextInAutoQueue();
-          +                            } else {
-          +                                autoQueue.clear();
-          +                            }
-          +                        }
-                                   });
-                               }
-          '''
-          import re
-          # strip the common leading indentation added for YAML embedding
-          lines = patch.split(chr(10))
-          cleaned = chr(10).join(l[10:] if len(l) >= 10 else l for l in lines)
-          with open('queue.patch', 'w') as f:
-              f.write(cleaned)
-          PYEOF
-          cat queue.patch | head -5
+          P=queue.patch
+          : > "$P"
+          echo '--- a/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java' >> "$P"
+          echo '+++ b/RealSR-NCNN-Android-GUI/app/src/main/java/com/tumuyan/ncnn/realsr/MainActivity.java' >> "$P"
+          echo '@@ -95,6 +95,10 @@ public class MainActivity extends AppCompatActivity {' >> "$P"
+          echo '     private String outputSavePath = "";' >> "$P"
+          echo '     private String inputFileName = "";' >> "$P"
+          echo ' ' >> "$P"
+          echo '+    // --- Auto Queue feature ---' >> "$P"
+          echo '+    private final List<Uri> autoQueue = new ArrayList<>();' >> "$P"
+          echo '+    private int autoQueueIndex = 0;' >> "$P"
+          echo '+' >> "$P"
+          echo '     private String[] formats;' >> "$P"
+          echo ' ' >> "$P"
+          echo '     private String[] command = null;' >> "$P"
+          echo '@@ -560,10 +564,15 @@ public class MainActivity extends AppCompatActivity {' >> "$P"
+          echo '             } else if (requestCode == SELECT_MULTI_IMAGE) {' >> "$P"
+          echo '                 List<Uri> imageUris = new ArrayList<>();' >> "$P"
+          echo '                 ClipData clipData = data.getClipData();' >> "$P"
+          echo '-                for (int i = 0; i < clipData.getItemCount(); i++) {' >> "$P"
+          echo '-                    imageUris.add(clipData.getItemAt(i).getUri());' >> "$P"
+          echo '+                if (clipData != null) {' >> "$P"
+          echo '+                    for (int i = 0; i < clipData.getItemCount(); i++) {' >> "$P"
+          echo '+                        imageUris.add(clipData.getItemAt(i).getUri());' >> "$P"
+          echo '+                    }' >> "$P"
+          echo '                 }' >> "$P"
+          echo '-                handleSelectedImages(imageUris);' >> "$P"
+          echo '+                autoQueue.clear();' >> "$P"
+          echo '+                autoQueue.addAll(imageUris);' >> "$P"
+          echo '+                autoQueueIndex = 0;' >> "$P"
+          echo '+                processNextInAutoQueue();' >> "$P"
+          echo '             }' >> "$P"
+          echo ' ' >> "$P"
+          echo '         }' >> "$P"
+          echo '         super.onActivityResult(requestCode, resultCode, data);' >> "$P"
+          echo '     }' >> "$P"
+          echo ' ' >> "$P"
+          echo '+    // Loads the next queued image via the normal single-image path,' >> "$P"
+          echo '+    // then auto-triggers the same run logic as tapping "Run".' >> "$P"
+          echo '+    private void processNextInAutoQueue() {' >> "$P"
+          echo '+        if (autoQueueIndex >= autoQueue.size()) {' >> "$P"
+          echo '+            autoQueue.clear();' >> "$P"
+          echo '+            return;' >> "$P"
+          echo '+        }' >> "$P"
+          echo '+        Uri uri = autoQueue.get(autoQueueIndex);' >> "$P"
+          echo '+        deleteFile(inputFile);' >> "$P"
+          echo '+        inputFileName = getFileName(uri, this);' >> "$P"
+          echo '+        if (inputFileName != null)' >> "$P"
+          printf '%s\n' '+            inputFileName = inputFileName.replaceFirst("\\.[^.]+$", "");' >> "$P"
+          echo '+        try {' >> "$P"
+          echo '+            InputStream in = getContentResolver().openInputStream(uri);' >> "$P"
+          echo '+            if (in != null) {' >> "$P"
+          echo '+                saveInputImage(in, "");' >> "$P"
+          echo '+                runOnUiThread(this::triggerRunClick);' >> "$P"
+          echo '+            } else {' >> "$P"
+          echo '+                autoQueueIndex++;' >> "$P"
+          echo '+                processNextInAutoQueue();' >> "$P"
+          echo '+            }' >> "$P"
+          echo '+        } catch (Exception e) {' >> "$P"
+          echo '+            e.printStackTrace();' >> "$P"
+          echo '+            autoQueueIndex++;' >> "$P"
+          echo '+            processNextInAutoQueue();' >> "$P"
+          echo '+        }' >> "$P"
+          echo '+    }' >> "$P"
+          echo '+' >> "$P"
+          echo '+    private void triggerRunClick() {' >> "$P"
+          echo '+        View runBtn = findViewById(R.id.btn_run);' >> "$P"
+          echo '+        if (runBtn != null)' >> "$P"
+          echo '+            runBtn.performClick();' >> "$P"
+          echo '+    }' >> "$P"
+          echo '+' >> "$P"
+          echo '@@ -820,6 +860,13 @@ public class MainActivity extends AppCompatActivity {' >> "$P"
+          echo '                             if (!effectivelyFinalCmd.contains("output.png"))' >> "$P"
+          echo '                                 imageView.setVisibility(View.GONE);' >> "$P"
+          echo '                         }' >> "$P"
+          echo '+' >> "$P"
+          echo '+                        if (success && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {' >> "$P"
+          echo '+                            autoQueueIndex++;' >> "$P"
+          echo '+                            if (autoQueueIndex < autoQueue.size()) {' >> "$P"
+          echo '+                                processNextInAutoQueue();' >> "$P"
+          echo '+                            } else {' >> "$P"
+          echo '+                                autoQueue.clear();' >> "$P"
+          echo '+                            }' >> "$P"
+          echo '+                        }' >> "$P"
+          echo '                             });' >> "$P"
+          echo '                         }' >> "$P"
+          cat "$P"
 
       - name: Apply queue patch
         run: |
