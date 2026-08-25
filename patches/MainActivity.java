@@ -37,7 +37,6 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
-import android.widget.LinearLayout;
 import android.widget.SearchView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -733,7 +732,7 @@ public class MainActivity extends AppCompatActivity {
                 autoQueueTotal = 0;
                 runOnUiThread(() -> {
                     android.widget.Button runBtn = findViewById(R.id.btn_run);
-                    if (runBtn != null) runBtn.setText(getString(R.string.run));
+                    if (runBtn != null) runBtn.setText("Run");
                     if (menuProgress != null) menuProgress.setTitle("");
                 });
                 return;
@@ -1028,7 +1027,7 @@ public class MainActivity extends AppCompatActivity {
             autoQueueTotal = 0;
             runOnUiThread(() -> {
                 android.widget.Button runBtn = findViewById(R.id.btn_run);
-                if (runBtn != null) runBtn.setText(getString(R.string.run));
+                if (runBtn != null) runBtn.setText("Run");
             });
             return;
         }
@@ -1040,7 +1039,7 @@ public class MainActivity extends AppCompatActivity {
 
         runOnUiThread(() -> {
             android.widget.Button runBtn = findViewById(R.id.btn_run);
-            if (runBtn != null) runBtn.setText(getString(R.string.stop));
+            if (runBtn != null) runBtn.setText("Stop");
             if (menuProgress != null) {
                 String prefix = (autoQueueIndex + 1) + "/" + autoQueueTotal + " ";
                 menuProgress.setTitle(prefix);
@@ -1440,14 +1439,14 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     autoQueue.clear();
                     android.widget.Button runBtn = findViewById(R.id.btn_run);
-                    if (runBtn != null) runBtn.setText(getString(R.string.run));
+                    if (runBtn != null) runBtn.setText("Run");
                 }
             } else if (final_result_fail && autoQueueTotal > 0) {
                 // failed item: stop the queue rather than silently continuing
                 autoQueue.clear();
                 autoQueueTotal = 0;
                 android.widget.Button runBtn = findViewById(R.id.btn_run);
-                if (runBtn != null) runBtn.setText(getString(R.string.run));
+                if (runBtn != null) runBtn.setText("Run");
             }
         });
 
