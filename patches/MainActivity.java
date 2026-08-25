@@ -33,8 +33,11 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
 import android.widget.SearchView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -89,6 +92,9 @@ public class MainActivity extends AppCompatActivity {
     // --- Auto Queue feature ---
     private final List<Uri> autoQueue = new ArrayList<>();
     private int autoQueueIndex = 0;
+    private int autoQueueTotal = 0;
+    private boolean showPreview = true;
+    private CheckBox previewCheckBox;
 
     private String[] formats;
 
@@ -719,6 +725,20 @@ public class MainActivity extends AppCompatActivity {
         );
 
         findViewById(R.id.btn_run).setOnClickListener(view -> {
+            // --- Auto Queue: if a queue is active, this tap means STOP ---
+            if (!autoQueue.isEmpty()) {
+                stopCommand();
+                autoQueue.clear();
+                autoQueueIndex = 0;
+                autoQueueTotal = 0;
+                runOnUiThread(() -> {
+                    android.widget.Button runBtn = findViewById(R.id.btn_run);
+                    if (runBtn != null) runBtn.setText(getString(R.string.run));
+                    if (menuProgress != null) menuProgress.setTitle("");
+                });
+                return;
+            }
+
             menuProgress.setTitle("");
             {
                 stopCommand();
@@ -773,7 +793,7 @@ public class MainActivity extends AppCompatActivity {
                         }
 
                         boolean showImgView = (cmd.toString().contains("output.png"));
-                        if (showImgView) {
+                        if (showImgView && showPreview) {
                             if (outputFile.exists() && outputFile.isFile()) {
                                 updateImage(dir + "/output.png", String.format("%s\n%s", getString(R.string.hr), log), false);
                             } else if (inputIsGifAnimation && outputFile.exists() && outputFile.isDirectory() && outputFile.listFiles().length > 1) {
@@ -782,7 +802,7 @@ public class MainActivity extends AppCompatActivity {
                                 updateImage(dir + "/input.png", String.format("%s\n%s", getString(R.string.lr), log), false);
                             }
                         }
-                        if (!showImgView)
+                        if (!showImgView || !showPreview)
                             runOnUiThread(
                                     () -> imageView.setVisibility(View.GONE)
                             );
@@ -796,6 +816,23 @@ public class MainActivity extends AppCompatActivity {
             this.startActivity(intent);
             overridePendingTransition(0, android.R.anim.slide_out_right);
         });
+
+        // --- Auto Queue: programmatically add preview toggle checkbox below buttons ---
+        try {
+            View btnRunView = findViewById(R.id.btn_run);
+            ViewGroup buttonParent = (ViewGroup) btnRunView.getParent();
+            ViewGroup outerParent = (ViewGroup) buttonParent.getParent();
+
+            previewCheckBox = new CheckBox(this);
+            previewCheckBox.setText("Show preview");
+            previewCheckBox.setChecked(true);
+            previewCheckBox.setOnCheckedChangeListener((buttonView, isChecked) -> showPreview = isChecked);
+
+            int indexOfButtonRow = outerParent.indexOfChild(buttonParent);
+            outerParent.addView(previewCheckBox, indexOfButtonRow + 1);
+        } catch (Exception e) {
+            Log.e("MainActivity", "Failed to inject preview checkbox", e);
+        }
 
 
         requirePremision();
@@ -969,10 +1006,13 @@ public class MainActivity extends AppCompatActivity {
                     for (int i = 0; i < clipData.getItemCount(); i++) {
                         imageUris.add(clipData.getItemAt(i).getUri());
                     }
+                } else if (url != null) {
+                    imageUris.add(url);
                 }
                 autoQueue.clear();
                 autoQueue.addAll(imageUris);
                 autoQueueIndex = 0;
+                autoQueueTotal = imageUris.size();
                 processNextInAutoQueue();
             }
 
@@ -985,6 +1025,11 @@ public class MainActivity extends AppCompatActivity {
     private void processNextInAutoQueue() {
         if (autoQueueIndex >= autoQueue.size()) {
             autoQueue.clear();
+            autoQueueTotal = 0;
+            runOnUiThread(() -> {
+                android.widget.Button runBtn = findViewById(R.id.btn_run);
+                if (runBtn != null) runBtn.setText(getString(R.string.run));
+            });
             return;
         }
         Uri uri = autoQueue.get(autoQueueIndex);
@@ -992,6 +1037,16 @@ public class MainActivity extends AppCompatActivity {
         String name = getFileName(uri, this);
         inputFileName = (name != null) ? name.replaceFirst("\\.[^\\.]+$", "") : "";
         Log.i("processNextInAutoQueue", "input file name=" + inputFileName + " index=" + autoQueueIndex);
+
+        runOnUiThread(() -> {
+            android.widget.Button runBtn = findViewById(R.id.btn_run);
+            if (runBtn != null) runBtn.setText(getString(R.string.stop));
+            if (menuProgress != null) {
+                String prefix = (autoQueueIndex + 1) + "/" + autoQueueTotal + " ";
+                menuProgress.setTitle(prefix);
+            }
+        });
+
         try {
             InputStream in = getContentResolver().openInputStream(uri);
             if (null != in) {
@@ -1162,7 +1217,10 @@ public class MainActivity extends AppCompatActivity {
             }
 
             runOnUiThread(() -> {
-                menuProgress.setTitle(BUSY);
+                String prefix = (!autoQueue.isEmpty() || autoQueueTotal > 0)
+                        ? ((autoQueueIndex + 1) + "/" + autoQueueTotal + " ")
+                        : "";
+                menuProgress.setTitle(prefix + BUSY);
                 sendNotification(this, BUSY);
             });
             modelName = "Real-ESRGAN-anime";
@@ -1294,7 +1352,10 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         logTextView.setText(result + finalLine);
                         if (p) {
-                            menuProgress.setTitle(progressText);
+                            String prefix = (autoQueueTotal > 0)
+                                    ? ((autoQueueIndex + 1) + "/" + autoQueueTotal + " ")
+                                    : "";
+                            menuProgress.setTitle(prefix + progressText);
                             sendNotification(this, finalLine);
                         }
                     });
@@ -1357,7 +1418,8 @@ public class MainActivity extends AppCompatActivity {
         runOnUiThread(() -> {
 
             logTextView.setText(log);
-            menuProgress.setTitle(DONE);
+            String prefix = (autoQueueTotal > 0) ? ((autoQueueIndex + 1) + "/" + autoQueueTotal + " ") : "";
+            menuProgress.setTitle(prefix + DONE);
             sendNotification(this, DONE);
 
             if (save) {
@@ -1371,13 +1433,21 @@ public class MainActivity extends AppCompatActivity {
             }
 
             // --- Auto Queue advance ---
-            if (!final_result_fail && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {
+            if (!final_result_fail && autoQueueTotal > 0 && autoQueueIndex < autoQueue.size()) {
                 autoQueueIndex++;
                 if (autoQueueIndex < autoQueue.size()) {
                     processNextInAutoQueue();
                 } else {
                     autoQueue.clear();
+                    android.widget.Button runBtn = findViewById(R.id.btn_run);
+                    if (runBtn != null) runBtn.setText(getString(R.string.run));
                 }
+            } else if (final_result_fail && autoQueueTotal > 0) {
+                // failed item: stop the queue rather than silently continuing
+                autoQueue.clear();
+                autoQueueTotal = 0;
+                android.widget.Button runBtn = findViewById(R.id.btn_run);
+                if (runBtn != null) runBtn.setText(getString(R.string.run));
             }
         });
 
