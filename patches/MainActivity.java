@@ -15,14 +15,12 @@ import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PictureInPictureParams;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.icu.text.SimpleDateFormat;
@@ -975,26 +973,11 @@ public class MainActivity extends AppCompatActivity {
                 autoQueue.clear();
                 autoQueue.addAll(imageUris);
                 autoQueueIndex = 0;
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    try {
-                        enterPictureInPictureMode(new PictureInPictureParams.Builder().build());
-                    } catch (Exception e) {
-                        Log.e("MainActivity", "enterPictureInPictureMode failed", e);
-                    }
-                }
-
                 processNextInAutoQueue();
             }
 
         }
         super.onActivityResult(requestCode, resultCode, data);
-    }
-
-    @Override
-    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
-        Log.i("MainActivity", "PiP mode changed: " + isInPictureInPictureMode);
     }
 
     // Loads the next queued image via the normal single-image path,
@@ -1387,16 +1370,19 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(getApplicationContext(), R.string.save_succeed, Toast.LENGTH_SHORT).show();
             }
 
-            // --- Auto Queue advance ---
-            if (!final_result_fail && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {
-                autoQueueIndex++;
-                if (autoQueueIndex < autoQueue.size()) {
-                    processNextInAutoQueue();
-                } else {
-                    autoQueue.clear();
-                }
-            }
+            // --- Auto Queue advance --- MOVED OUTSIDE, see below
         });
+
+        // --- Auto Queue advance ---
+        // Now runs on the background thread, even if UI thread is frozen
+        if (!final_result_fail && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {
+            autoQueueIndex++;
+            if (autoQueueIndex < autoQueue.size()) {
+                processNextInAutoQueue();
+            } else {
+                autoQueue.clear();
+            }
+        }
 
 
         Log.i("run20", "finish");
