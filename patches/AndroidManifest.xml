@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Existing permission -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!-- New permissions for foreground service and notifications -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Required if targeting Android 13 (API 33) or higher -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Required if targeting Android 14 (API 34) or higher and using dataSync foreground service type -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:allowBackup="true"
@@ -11,22 +19,23 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.RealSR">
-<!--        <uses-native-library
+
+        <!--        <uses-native-library
             android:name="libOpenCL.so"
             android:required="true"/>-->
+
         <activity
             android:name=".SettingActivity"
             android:parentActivityName=".MainActivity"
             android:exported="false" />
+
+        <!-- PiP attributes removed as requested -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:supportsPictureInPicture="true"
-            android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <intent-filter android:label="@string/app_name">
@@ -40,6 +49,13 @@
                 <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
+
+        <!-- Foreground service declaration (inner class) -->
+        <service
+            android:name=".MainActivity$QueueForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -47,7 +63,7 @@
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
+                android:resource="@xml/file_paths" />
         </provider>
     </application>
 
