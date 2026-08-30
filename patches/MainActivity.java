@@ -34,9 +34,10 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.SearchView;
 import android.widget.Spinner;
@@ -89,37 +90,19 @@ public class MainActivity extends AppCompatActivity {
 
     // --- Auto Queue feature ---
     private final List<Uri> autoQueue = new ArrayList<>();
+    private final List<String> autoQueueFileNames = new ArrayList<>();
     private int autoQueueIndex = 0;
-    private boolean queueRunning = false;
 
-    // --- Preview toggle ---
+    // --- Preview toggle + INPUTS list UI ---
+    private CheckBox previewCheckBox;
+    private TextView inputsListView;
     private boolean showPreview = true;
-    private File currentPreviewFile = null;
-
-    // UI elements for queue
-    private TextView queueStatusText;
-    private Button btnStartQueue, btnStopQueue, btnClearQueue, btnTogglePreview;
+    private static final String PREF_SHOW_PREVIEW = "showQueuePreview";
 
     private String[] formats;
+
     private String[] command = null;
     private String log = "";
-    private String progressText = "";
-
-    private boolean inputIsGifAnimation;
-    private int inputGifDelay;
-
-    private int tileSize;
-    private boolean useCPU;
-    private boolean keepScreen;
-    private boolean useMultFiles;
-    private boolean prePng;
-    private boolean preFrame;
-    private boolean autoSave;
-    private boolean showSearchView;
-    private String savePath = galleryPath;
-    private static final int NOTIFY_ID = 1;
-    private static final String CHANNEL_NAME_RESULT = "channel_result";
-    private static final String CHANNEL_NAME_PROGRESS = "channel_progress";
 
     private final String[] bench_mark_commands = new String[]{
             "./realsr-ncnn -c 46 -i img/PM5544.jpeg -o input.png  -m models-Real-ESRGAN",
@@ -166,6 +149,18 @@ public class MainActivity extends AppCompatActivity {
             "./Anime4k -i input.png -o output.png -z 4 -A -w",
             "./Anime4k -i input.png -o output.png -z 4 -A -w -H",
     };
+    private int tileSize;
+    private boolean useCPU;
+    private boolean keepScreen;
+    private boolean useMultFiles;
+    private boolean prePng;
+    private boolean preFrame;
+    private boolean autoSave;
+    private boolean showSearchView;
+    private String savePath = galleryPath;
+    private static final int NOTIFY_ID = 1;
+    private static final String CHANNEL_NAME_RESULT = "channel_result";
+    private static final String CHANNEL_NAME_PROGRESS = "channel_progress";
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -181,6 +176,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+
         final String q;
         String imageName = "/output.png";
         boolean bench_mark_mode = false;
@@ -257,14 +253,12 @@ public class MainActivity extends AppCompatActivity {
                 final File finalfile = new File(dir + finalImageName);
                 if (finalfile.exists() && (!finalfile.isDirectory())) {
                     runOnUiThread(() -> {
-                        if (showPreview) {
-                            imageView.setVisibility(View.VISIBLE);
-                            imageView.setImage(ImageSource.uri(finalfile.getAbsolutePath()));
-                        }
+                        imageView.setVisibility(View.VISIBLE);
+                        imageView.setImage(ImageSource.uri(finalfile.getAbsolutePath()));
                         logTextView.setKeepScreenOn(false);
                     });
                 } else {
-                    runOnUiThread(() -> setPreviewVisibility(false));
+                    runOnUiThread(() -> imageView.setVisibility(View.GONE));
                 }
             }).start();
         }
@@ -272,16 +266,15 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
+    // 删除文件或者目录
     public static void deleteFile(File f) {
         if (f.isDirectory()) {
             File[] files = f.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.isDirectory()) {
-                        deleteFile(file);
-                    } else {
-                        file.delete();
-                    }
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    deleteFile(file);
+                } else {
+                    file.delete();
                 }
             }
         }
@@ -375,6 +368,12 @@ public class MainActivity extends AppCompatActivity {
         else
             searchView.setVisibility(View.GONE);
 
+        // --- Load persisted preview preference (defaults to true/checked) ---
+        showPreview = mySharePerferences.getBoolean(PREF_SHOW_PREVIEW, true);
+        if (previewCheckBox != null) {
+            previewCheckBox.setChecked(showPreview);
+        }
+
         notify = mySharePerferences.getInt("notify", 0);
 
         format = mySharePerferences.getInt("format", 0);
@@ -445,11 +444,16 @@ public class MainActivity extends AppCompatActivity {
         return false;
     }
 
+    /**
+     * 生成用户自定义命令.
+     */
     private List<String> getExtraCommands(String extraPath, String extraCommand, String[] classicalFilters, String[] magickFilters) {
+
         List<String> cmdList = new ArrayList<>();
         List<String> cmdLabel = new ArrayList<>();
 
         String[] classicalResize = {"2", "4", "10"};
+
         for (String f : classicalFilters) {
             for (String s : classicalResize) {
                 cmdList.add("./resize-ncnn -i input.png -o output.png  -m " + f + " -s " + s);
@@ -458,6 +462,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String[] magickResize = {"200%", "400%", "1000%"};
+
         for (String f : magickFilters) {
             for (String s : magickResize) {
                 cmdList.add("./magick input.png -filter " + f + " -resize " + s + " output.png ");
@@ -508,6 +513,8 @@ public class MainActivity extends AppCompatActivity {
                             command = "./srmd-ncnn -i input.png -o output.png  -m " + folder.getAbsolutePath() + " -s ";
                         } else if (name.startsWith("models-DF2K")) {
                             model = name.replace("models-", "RealSR-");
+                        } else if (name.startsWith("models-mnn")) {
+
                         }
 
                         List<String> suffix = genCmdFromModel(folder, scaleMatcher, noiseMatcher);
@@ -522,6 +529,7 @@ public class MainActivity extends AppCompatActivity {
 
         int l = command_0.length;
         command = new String[cmdList.size() + l];
+
         System.arraycopy(command_0, 0, command, 0, l);
         for (int i = 0; i < cmdList.size(); i++)
             command[l + i] = cmdList.get(i);
@@ -537,7 +545,6 @@ public class MainActivity extends AppCompatActivity {
     private static List<String> genCmdFromModel(File folder, String scaleMatcher, String noiseMatcher) {
         List<String> list = new ArrayList<>();
         File[] files = folder.listFiles();
-        if (files == null) return list;
 
         List<String> names = new ArrayList<>();
         for (File f : files) {
@@ -732,7 +739,7 @@ public class MainActivity extends AppCompatActivity {
                         }
 
                         boolean showImgView = (cmd.toString().contains("output.png"));
-                        if (showImgView) {
+                        if (showImgView && showPreview) {
                             if (outputFile.exists() && outputFile.isFile()) {
                                 updateImage(dir + "/output.png", String.format("%s\n%s", getString(R.string.hr), log), false);
                             } else if (inputIsGifAnimation && outputFile.exists() && outputFile.isDirectory() && outputFile.listFiles().length > 1) {
@@ -741,8 +748,8 @@ public class MainActivity extends AppCompatActivity {
                                 updateImage(dir + "/input.png", String.format("%s\n%s", getString(R.string.lr), log), false);
                             }
                         }
-                        if (!showImgView)
-                            runOnUiThread(() -> setPreviewVisibility(false));
+                        if (!showImgView || !showPreview)
+                            runOnUiThread(() -> imageView.setVisibility(View.GONE));
                     }
                 }).start();
             }
@@ -754,8 +761,38 @@ public class MainActivity extends AppCompatActivity {
             overridePendingTransition(0, android.R.anim.slide_out_right);
         });
 
-        // ---- Add queue UI controls programmatically ----
-        createQueueUI();
+        // --- Auto Queue UI: INPUTS list + preview checkbox, injected below button row ---
+        try {
+            View btnRunView = findViewById(R.id.btn_run);
+            ViewGroup buttonParent = (ViewGroup) btnRunView.getParent();
+            ViewGroup outerParent = (ViewGroup) buttonParent.getParent();
+            int indexOfButtonRow = outerParent.indexOfChild(buttonParent);
+
+            LinearLayout panel = new LinearLayout(this);
+            panel.setOrientation(LinearLayout.VERTICAL);
+            panel.setPadding(24, 12, 24, 12);
+
+            inputsListView = new TextView(this);
+            inputsListView.setText("INPUTS \uD83D\uDDBC\uFE0F\n(Empty)");
+            panel.addView(inputsListView);
+
+            previewCheckBox = new CheckBox(this);
+            previewCheckBox.setText("Show preview");
+            SharedPreferences prefsAtInit = getSharedPreferences("config", Activity.MODE_PRIVATE);
+            showPreview = prefsAtInit.getBoolean(PREF_SHOW_PREVIEW, true);
+            previewCheckBox.setChecked(showPreview);
+            previewCheckBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                showPreview = isChecked;
+                SharedPreferences.Editor ed = getSharedPreferences("config", Activity.MODE_PRIVATE).edit();
+                ed.putBoolean(PREF_SHOW_PREVIEW, isChecked);
+                ed.apply();
+            });
+            panel.addView(previewCheckBox);
+
+            outerParent.addView(panel, indexOfButtonRow + 1);
+        } catch (Exception e) {
+            Log.e("MainActivity", "Failed to inject INPUTS/preview panel", e);
+        }
 
         requirePremision();
 
@@ -763,132 +800,6 @@ public class MainActivity extends AppCompatActivity {
         else initProcess = true;
 
         readFileFromShare();
-    }
-
-    private void createQueueUI() {
-        View rootView = findViewById(android.R.id.content);
-        if (rootView instanceof LinearLayout) {
-            LinearLayout rootLayout = (LinearLayout) rootView;
-            LinearLayout queueLayout = new LinearLayout(this);
-            queueLayout.setOrientation(LinearLayout.VERTICAL);
-            queueLayout.setPadding(16, 16, 16, 16);
-            LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-            );
-            layoutParams.setMargins(0, 16, 0, 0);
-            queueLayout.setLayoutParams(layoutParams);
-
-            queueStatusText = new TextView(this);
-            queueStatusText.setText("Queue: 0/0");
-            queueStatusText.setTextSize(16);
-            queueLayout.addView(queueStatusText);
-
-            LinearLayout buttonRow = new LinearLayout(this);
-            buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-            buttonRow.setPadding(0, 8, 0, 8);
-            queueLayout.addView(buttonRow);
-
-            btnStartQueue = new Button(this);
-            btnStartQueue.setText("Start");
-            btnStartQueue.setEnabled(false);
-            btnStartQueue.setOnClickListener(v -> startQueueProcessing());
-            buttonRow.addView(btnStartQueue);
-
-            btnStopQueue = new Button(this);
-            btnStopQueue.setText("Stop");
-            btnStopQueue.setEnabled(false);
-            btnStopQueue.setOnClickListener(v -> stopQueueProcessing());
-            buttonRow.addView(btnStopQueue);
-
-            btnClearQueue = new Button(this);
-            btnClearQueue.setText("Clear Queue");
-            btnClearQueue.setEnabled(false);
-            btnClearQueue.setOnClickListener(v -> stopQueueProcessing());
-            buttonRow.addView(btnClearQueue);
-
-            btnTogglePreview = new Button(this);
-            btnTogglePreview.setText("Hide Preview");
-            btnTogglePreview.setOnClickListener(v -> togglePreview());
-            buttonRow.addView(btnTogglePreview);
-
-            rootLayout.addView(queueLayout);
-        } else {
-            Log.e("createQueueUI", "Root layout is not LinearLayout, cannot add queue UI");
-        }
-    }
-
-    private void startQueueProcessing() {
-        if (autoQueue.isEmpty() || queueRunning) return;
-        queueRunning = true;
-        autoQueueIndex = 0;
-        updateQueueUI();
-        Intent serviceIntent = new Intent(this, QueueForegroundService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
-        }
-        processNextInAutoQueue();
-    }
-
-    private void stopQueueProcessing() {
-        queueRunning = false;
-        autoQueue.clear();
-        autoQueueIndex = 0;
-        stopCommand();
-        stopQueueService();
-        updateQueueUI();
-    }
-
-    private void stopQueueService() {
-        Intent stopIntent = new Intent(this, QueueForegroundService.class);
-        stopIntent.setAction(QueueForegroundService.ACTION_STOP);
-        startService(stopIntent);
-    }
-
-    private void updateQueueUI() {
-        if (queueStatusText == null) return;
-        if (autoQueue.isEmpty()) {
-            queueStatusText.setText("Queue: 0/0");
-            if (btnStartQueue != null) btnStartQueue.setEnabled(false);
-            if (btnStopQueue != null) btnStopQueue.setEnabled(false);
-            if (btnClearQueue != null) btnClearQueue.setEnabled(false);
-        } else {
-            if (queueRunning) {
-                queueStatusText.setText("Processing: " + (autoQueueIndex + 1) + "/" + autoQueue.size());
-                if (btnStartQueue != null) btnStartQueue.setEnabled(false);
-                if (btnStopQueue != null) btnStopQueue.setEnabled(true);
-                if (btnClearQueue != null) btnClearQueue.setEnabled(true);
-            } else {
-                queueStatusText.setText("Queue: " + autoQueue.size() + " images");
-                if (btnStartQueue != null) btnStartQueue.setEnabled(true);
-                if (btnStopQueue != null) btnStopQueue.setEnabled(false);
-                if (btnClearQueue != null) btnClearQueue.setEnabled(true);
-            }
-        }
-    }
-
-    private void togglePreview() {
-        showPreview = !showPreview;
-        if (showPreview) {
-            if (currentPreviewFile != null && currentPreviewFile.exists()) {
-                setPreviewVisibility(true);
-            }
-            btnTogglePreview.setText("Hide Preview");
-        } else {
-            setPreviewVisibility(false);
-            btnTogglePreview.setText("Show Preview");
-        }
-    }
-
-    private void setPreviewVisibility(boolean visible) {
-        if (visible && showPreview && currentPreviewFile != null && currentPreviewFile.exists()) {
-            imageView.setVisibility(View.VISIBLE);
-            imageView.setImage(ImageSource.uri(currentPreviewFile.getAbsolutePath()));
-        } else {
-            imageView.setVisibility(View.GONE);
-        }
     }
 
     private void requirePremision() {
@@ -963,18 +874,20 @@ public class MainActivity extends AppCompatActivity {
         deleteFile(inputFile);
         if (uris.size() == 1) {
             Uri url = uris.get(0);
-            inputFileName = getFileName(url, this).replaceFirst("\\.[^\\.]+$", "");
-            Log.i("input file name", inputFileName);
-            InputStream in;
-            try {
-                in = getContentResolver().openInputStream(url);
-                if (null != in)
-                    saveInputImage(in, "");
-                else
-                    Toast.makeText(this, "input == null", Toast.LENGTH_SHORT).show();
-            } catch (Exception e) {
-                e.printStackTrace();
-                return;
+            {
+                inputFileName = getFileName(url, this).replaceFirst("\\.[^\\.]+$", "");
+                Log.i("input file name", inputFileName);
+                InputStream in;
+                try {
+                    in = getContentResolver().openInputStream(url);
+                    if (null != in)
+                        saveInputImage(in, "");
+                    else
+                        Toast.makeText(this, "input == null", Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return;
+                }
             }
             return;
         }
@@ -984,6 +897,7 @@ public class MainActivity extends AppCompatActivity {
 
         SimpleDateFormat f = new SimpleDateFormat("MMdd_HHmmss");
         String time = f.format(new Date());
+        int k = 0;
         for (int i = 0; i < uris.size(); i++) {
             Uri uri = uris.get(i);
             inputFileName = getFileName(uri, this).replaceFirst("\\.[^\\.]+$", "");
@@ -1007,6 +921,7 @@ public class MainActivity extends AppCompatActivity {
                 j++;
                 inputFilePath = dir + "/input.png/" + inputFileName + "_" + j + ".png";
             }
+            k++;
             whiteFileFromUri(uri, inputFilePath);
         }
         int inputFileSize = inputFile.listFiles().length;
@@ -1041,31 +956,71 @@ public class MainActivity extends AppCompatActivity {
                         imageUris.add(clipData.getItemAt(i).getUri());
                     }
                 }
-                // Replace queue with new selection, do not auto-start
                 autoQueue.clear();
+                autoQueueFileNames.clear();
+                for (Uri u : imageUris) {
+                    String n = getFileName(u, this);
+                    autoQueueFileNames.add(n != null ? n : "(unknown)");
+                }
                 autoQueue.addAll(imageUris);
                 autoQueueIndex = 0;
-                queueRunning = false;
-                updateQueueUI();
+
+                updateInputsListDisplay();
+
+                // Start foreground service to keep process alive
+                Intent serviceIntent = new Intent(this, QueueForegroundService.class);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent);
+                } else {
+                    startService(serviceIntent);
+                }
+
+                processNextInAutoQueue();
             }
         }
         super.onActivityResult(requestCode, resultCode, data);
     }
 
+    // Rebuilds the INPUTS list text block based on current queue + index.
+    private void updateInputsListDisplay() {
+        runOnUiThread(() -> {
+            if (inputsListView == null) return;
+            StringBuilder sb = new StringBuilder("INPUTS \uD83D\uDDBC\uFE0F\n");
+            if (autoQueueFileNames.isEmpty()) {
+                sb.append("(Empty)");
+            } else {
+                for (int i = 0; i < autoQueueFileNames.size(); i++) {
+                    sb.append(autoQueueFileNames.get(i));
+                    if (i < autoQueueIndex) {
+                        sb.append("(done)\u2705");
+                    } else if (i == autoQueueIndex) {
+                        sb.append("(current)\u23F3");
+                    } else {
+                        sb.append("(queue)\uD83D\uDD1C");
+                    }
+                    if (i < autoQueueFileNames.size() - 1) {
+                        sb.append("\n");
+                    }
+                }
+            }
+            inputsListView.setText(sb.toString());
+        });
+    }
+
     private void processNextInAutoQueue() {
-        if (!queueRunning || autoQueueIndex >= autoQueue.size()) {
-            queueRunning = false;
+        if (autoQueueIndex >= autoQueue.size()) {
             autoQueue.clear();
-            stopQueueService();
-            runOnUiThread(this::updateQueueUI);
+            autoQueueFileNames.clear();
+            updateInputsListDisplay();
+            stopQueueService(); // safety stop
             return;
         }
-        runOnUiThread(this::updateQueueUI);
         Uri uri = autoQueue.get(autoQueueIndex);
         deleteFile(inputFile);
         String name = getFileName(uri, this);
         inputFileName = (name != null) ? name.replaceFirst("\\.[^\\.]+$", "") : "";
         Log.i("processNextInAutoQueue", "input file name=" + inputFileName + " index=" + autoQueueIndex);
+        updateInputsListDisplay();
         try {
             InputStream in = getContentResolver().openInputStream(uri);
             if (null != in) {
@@ -1145,6 +1100,8 @@ public class MainActivity extends AppCompatActivity {
         Log.d("run_command", "command=" + command + "; finish; result=" + con);
         return true;
     }
+
+    private String progressText = "";
 
     private static String[] getNameFromModelPath(String path, String type) {
         String scaleMatcher = "([xX]\\d+|\\d+[xX])";
@@ -1407,15 +1364,20 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Queue advancement outside UI thread
-        if (!final_result_fail && queueRunning && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {
+        // Queue advancement and service stop outside UI thread
+        if (!final_result_fail && !autoQueue.isEmpty() && autoQueueIndex < autoQueue.size()) {
             autoQueueIndex++;
-            processNextInAutoQueue();
-        } else if (queueRunning) {
-            queueRunning = false;
-            autoQueue.clear();
+            updateInputsListDisplay();
+            if (autoQueueIndex < autoQueue.size()) {
+                processNextInAutoQueue();
+            } else {
+                autoQueue.clear();
+                autoQueueFileNames.clear();
+                updateInputsListDisplay();
+                stopQueueService();
+            }
+        } else {
             stopQueueService();
-            runOnUiThread(this::updateQueueUI);
         }
 
         Log.i("run20", "finish");
@@ -1429,6 +1391,9 @@ public class MainActivity extends AppCompatActivity {
         }
         newTask = true;
     }
+
+    private boolean inputIsGifAnimation;
+    private int inputGifDelay;
 
     private boolean saveInputImage(@NonNull InputStream in, String path) {
         Log.i("saveInputImage", "start ");
@@ -1517,26 +1482,21 @@ public class MainActivity extends AppCompatActivity {
             if (file.exists()) {
                 if (file.isDirectory()) {
                     if (file.listFiles().length > 0) {
-                        currentPreviewFile = file.listFiles()[0];
-                        setPreviewVisibility(true);
+                        imageView.setVisibility(View.VISIBLE);
+                        imageView.setImage(ImageSource.uri(file.listFiles()[0].getPath()));
                         Log.i("saveInputImage", "finish, directory");
                     } else {
-                        currentPreviewFile = null;
-                        setPreviewVisibility(false);
+                        imageView.setVisibility(View.GONE);
                         Log.i("saveInputImage", "finish, empty directory");
                     }
                     logTextView.setText(text);
                 } else {
-                    currentPreviewFile = file;
-                    setPreviewVisibility(true);
+                    imageView.setVisibility(View.VISIBLE);
+                    imageView.setImage(ImageSource.uri(path));
                     logTextView.setText(getImageResolation(file, text));
                     Log.i("saveInputImage", "finish, file");
                 }
-            } else {
-                currentPreviewFile = null;
-                setPreviewVisibility(false);
-                Log.i("saveInputImage", "skip");
-            }
+            } else Log.i("saveInputImage", "skip");
             if (keepScreen) {
                 logTextView.setKeepScreenOn(false);
             }
@@ -1571,27 +1531,20 @@ public class MainActivity extends AppCompatActivity {
 
     private void showImage(File file, String info) {
         if (file == null) {
-            currentPreviewFile = null;
-            setPreviewVisibility(false);
+            imageView.setVisibility(View.GONE);
             logTextView.setText(info);
         } else if (file.exists() && (!file.isDirectory())) {
-            currentPreviewFile = file;
-            setPreviewVisibility(true);
+            imageView.setVisibility(View.VISIBLE);
+            imageView.setImage(ImageSource.uri(file.getAbsolutePath()));
             logTextView.setText(getImageResolation(file, info));
         } else if (file.isDirectory()) {
+            imageView.setVisibility(View.GONE);
             File[] files = file.listFiles();
             if (files.length < 1) {
-                currentPreviewFile = null;
-                setPreviewVisibility(false);
                 logTextView.setText(getString(R.string.image_not_exists));
-            } else {
-                currentPreviewFile = files[0];
-                setPreviewVisibility(true);
-                logTextView.setText(getString(R.string.image_is_directory));
-            }
+            } else logTextView.setText(getString(R.string.image_is_directory));
         } else {
-            currentPreviewFile = null;
-            setPreviewVisibility(false);
+            imageView.setVisibility(View.GONE);
             logTextView.setText(getString(R.string.image_not_exists));
         }
     }
@@ -1687,6 +1640,12 @@ public class MainActivity extends AppCompatActivity {
         return cmd + " '" + outputSavePath + "'";
     }
 
+    private void stopQueueService() {
+        Intent stopIntent = new Intent(this, QueueForegroundService.class);
+        stopIntent.setAction(QueueForegroundService.ACTION_STOP);
+        startService(stopIntent);
+    }
+
     // Inner foreground service class
     public static class QueueForegroundService extends Service {
         private static final String CHANNEL_ID = "queue_processing";
@@ -1726,14 +1685,6 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public IBinder onBind(Intent intent) {
             return null;
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (queueRunning) {
-            stopQueueProcessing();
         }
     }
 }
