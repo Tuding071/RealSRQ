@@ -781,12 +781,32 @@ public class MainActivity extends AppCompatActivity {
             SharedPreferences prefsAtInit = getSharedPreferences("config", Activity.MODE_PRIVATE);
             showPreview = prefsAtInit.getBoolean(PREF_SHOW_PREVIEW, true);
             previewCheckBox.setChecked(showPreview);
+
+            // --- UPDATED CHECKBOX LISTENER ---
             previewCheckBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 showPreview = isChecked;
                 SharedPreferences.Editor ed = getSharedPreferences("config", Activity.MODE_PRIVATE).edit();
                 ed.putBoolean(PREF_SHOW_PREVIEW, isChecked);
                 ed.apply();
+
+                // Apply immediately to whatever's currently displayed, without waiting for next run
+                if (isChecked) {
+                    if (outputFile != null && outputFile.exists() && outputFile.isFile()) {
+                        imageView.setVisibility(View.VISIBLE);
+                        imageView.setImage(ImageSource.uri(outputFile.getAbsolutePath()));
+                    } else if (inputFile != null && inputFile.exists() && inputFile.isFile()) {
+                        imageView.setVisibility(View.VISIBLE);
+                        imageView.setImage(ImageSource.uri(inputFile.getAbsolutePath()));
+                    } else {
+                        // If no image is available, keep it hidden
+                        imageView.setVisibility(View.GONE);
+                    }
+                } else {
+                    imageView.setVisibility(View.GONE);
+                }
             });
+            // --- END OF UPDATED LISTENER ---
+
             panel.addView(previewCheckBox);
 
             outerParent.addView(panel, indexOfButtonRow + 1);
