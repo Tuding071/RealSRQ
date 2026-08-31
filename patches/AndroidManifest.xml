@@ -4,12 +4,14 @@
     <!-- Existing permission -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
-    <!-- New permissions for foreground service and notifications -->
+    <!-- Permissions for foreground service, notifications, and wakelock -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Required if targeting Android 13 (API 33) or higher -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Required if targeting Android 14 (API 34) or higher and using dataSync foreground service type -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Keeps CPU awake during queue processing so progress doesn't stall with screen off -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
@@ -29,7 +31,6 @@
             android:parentActivityName=".MainActivity"
             android:exported="false" />
 
-        <!-- PiP attributes removed as requested -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
