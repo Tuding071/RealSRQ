@@ -30,6 +30,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -98,6 +99,9 @@ public class MainActivity extends AppCompatActivity {
     private TextView inputsListView;
     private boolean showPreview = true;
     private static final String PREF_SHOW_PREVIEW = "showQueuePreview";
+
+    // --- Wakelock to keep CPU active during queue processing with screen off ---
+    private PowerManager.WakeLock wakeLock;
 
     private String[] formats;
 
@@ -781,8 +785,6 @@ public class MainActivity extends AppCompatActivity {
             SharedPreferences prefsAtInit = getSharedPreferences("config", Activity.MODE_PRIVATE);
             showPreview = prefsAtInit.getBoolean(PREF_SHOW_PREVIEW, true);
             previewCheckBox.setChecked(showPreview);
-
-            // --- UPDATED CHECKBOX LISTENER ---
             previewCheckBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 showPreview = isChecked;
                 SharedPreferences.Editor ed = getSharedPreferences("config", Activity.MODE_PRIVATE).edit();
@@ -797,16 +799,11 @@ public class MainActivity extends AppCompatActivity {
                     } else if (inputFile != null && inputFile.exists() && inputFile.isFile()) {
                         imageView.setVisibility(View.VISIBLE);
                         imageView.setImage(ImageSource.uri(inputFile.getAbsolutePath()));
-                    } else {
-                        // If no image is available, keep it hidden
-                        imageView.setVisibility(View.GONE);
                     }
                 } else {
                     imageView.setVisibility(View.GONE);
                 }
             });
-            // --- END OF UPDATED LISTENER ---
-
             panel.addView(previewCheckBox);
 
             outerParent.addView(panel, indexOfButtonRow + 1);
@@ -994,6 +991,8 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     startService(serviceIntent);
                 }
+
+                acquireQueueWakeLock();
 
                 processNextInAutoQueue();
             }
@@ -1502,8 +1501,12 @@ public class MainActivity extends AppCompatActivity {
             if (file.exists()) {
                 if (file.isDirectory()) {
                     if (file.listFiles().length > 0) {
-                        imageView.setVisibility(View.VISIBLE);
-                        imageView.setImage(ImageSource.uri(file.listFiles()[0].getPath()));
+                        if (showPreview) {
+                            imageView.setVisibility(View.VISIBLE);
+                            imageView.setImage(ImageSource.uri(file.listFiles()[0].getPath()));
+                        } else {
+                            imageView.setVisibility(View.GONE);
+                        }
                         Log.i("saveInputImage", "finish, directory");
                     } else {
                         imageView.setVisibility(View.GONE);
@@ -1511,8 +1514,12 @@ public class MainActivity extends AppCompatActivity {
                     }
                     logTextView.setText(text);
                 } else {
-                    imageView.setVisibility(View.VISIBLE);
-                    imageView.setImage(ImageSource.uri(path));
+                    if (showPreview) {
+                        imageView.setVisibility(View.VISIBLE);
+                        imageView.setImage(ImageSource.uri(path));
+                    } else {
+                        imageView.setVisibility(View.GONE);
+                    }
                     logTextView.setText(getImageResolation(file, text));
                     Log.i("saveInputImage", "finish, file");
                 }
@@ -1660,7 +1667,24 @@ public class MainActivity extends AppCompatActivity {
         return cmd + " '" + outputSavePath + "'";
     }
 
+    private void acquireQueueWakeLock() {
+        if (wakeLock == null) {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RealSR::QueueWakeLock");
+        }
+        if (!wakeLock.isHeld()) {
+            wakeLock.acquire(30 * 60 * 1000L /*30 min safety timeout*/);
+        }
+    }
+
+    private void releaseQueueWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
+    }
+
     private void stopQueueService() {
+        releaseQueueWakeLock();
         Intent stopIntent = new Intent(this, QueueForegroundService.class);
         stopIntent.setAction(QueueForegroundService.ACTION_STOP);
         startService(stopIntent);
